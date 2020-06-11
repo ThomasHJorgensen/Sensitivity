@@ -17,9 +17,9 @@ I will focus attention on estimation of dynamic economic models because
 such models typically are time-consuming to estimate.
 
 I assume that the estimation approach employed is of the form
-\[
+$\[
 \hat{\theta}=\arg\min_{\theta\in\Theta}g_{n}(\theta|\hat{\gamma})'W_{n}g_{n}(\theta|\hat{\gamma})
-\]
+\]$
 where $g_{n}(\theta|\hat{\gamma})=\frac{1}{n}\sum_{i=1}^{n}f(\theta|\hat{\gamma},\mathbf{w}_{i})$
 is some $J\times1$ vector valued function of the parameters and data,
 $\mathbf{w}_{i}$ for $i=1,\dots,n$, specified by the researcher.
