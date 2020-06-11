@@ -8,4 +8,4 @@ The replication package contains two folders.
 + "Oswald" conatins all code for the sensitivity analysis of the study by Oswald (2019).
 
 ## The Sensitivity Measure
-$c_t=0$
+we have $c=0$
