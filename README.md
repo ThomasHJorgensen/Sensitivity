@@ -6,6 +6,3 @@ The paper can be found [here](https://www.ifs.org.uk/uploads/CWP1620-Sensitivity
 The replication package contains two folders. 
 + "GP2002" contains all code for replication of the analysis in Gourinchas and Parker (2002).
 + "Oswald" conatins all code for the sensitivity analysis of the study by Oswald (2019).
-
-## The Sensitivity Measure
-See the Python notebook [Framework](https://github.com/ThomasHJorgensen/Sensitivity/blob/master/Framework.ipynb) for a description of the sensitivity measure and the estimation framework consideret.
