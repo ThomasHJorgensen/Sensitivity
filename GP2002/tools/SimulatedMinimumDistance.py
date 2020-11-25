@@ -2,9 +2,7 @@ import numpy as np
 import scipy as sci
 from scipy.optimize import minimize
 
-# TODO: 
-# 1) add a saving-module?:
-# 2) multistart-loop?
+
 class SimulatedMinimumDistance():
     ''' 
     This class performs simulated minimum distance (self) estimation.
@@ -61,7 +59,6 @@ class SimulatedMinimumDistance():
         return self.obj 
 
     def estimate(self,theta0,W,*args):
-        # TODO: consider multistart-loop with several algortihms - that could alternatively be hard-coded outside
         assert(len(W[0])==len(self.mom_data)) # check dimensions of W and mom_data
 
         # estimate
@@ -132,8 +129,8 @@ class SimulatedMinimumDistance():
             grad[:,p] = (mom_forward - mom_backward)/(2.0*step_now[p])
 
         # 1.1 reset the parameters in the model to theta
-        #for i in range(len(self.est_par)):
-        #    setattr(self.model.par,self.est_par[i],theta[i]) 
+        for i in range(len(self.est_par)):
+           setattr(self.model.par,self.est_par[i],theta[i]) 
 
         # 2. Sensitivity measures
         GW  = np.transpose(grad) @ W
@@ -143,12 +140,8 @@ class SimulatedMinimumDistance():
         # 3. Sensitivity measures
         self.sens1 = Lambda  # Andrews I, Gentzkow M, Shapiro JM: "Measuring the Sensitivity of Parameter Estimates to Estimation Moments." Quarterly Journal of Economics. 2017;132 (4) :1553-1592
 
-        # DO my suggestion
+        # DO sensitivity
         if fixed_par_str:
-            # mine: calculate the numerical gradient wrt parameters in fixed_par
-            # update parameters
-            for p in range(len(self.est_par)):
-                setattr(self.model.par,self.est_par[p],theta[p])
 
             # change the estimation parameters to be the fixed ones
             est_par = self.est_par

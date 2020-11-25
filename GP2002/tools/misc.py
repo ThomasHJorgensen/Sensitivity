@@ -26,7 +26,7 @@ def nonlinspace(x_min, x_max, n, phi):
 def gauss_hermite(n):
 
     # a. calculations
-    i = np.arange(1,5)
+    i = np.arange(1,n)
     a = np.sqrt(i/2)
     CM = np.diag(a,1) + np.diag(a,-1)
     L,V = np.linalg.eig(CM)

@@ -3,7 +3,8 @@ Class and functions for multi-linear interpolation
 """
 
 import numpy as np
-from numba import njit, jitclass, prange, boolean, int64, double, void
+from numba import njit,prange, boolean, int64, double, void
+from numba.experimental import jitclass
 
 info = [
     ('dimx',int64),

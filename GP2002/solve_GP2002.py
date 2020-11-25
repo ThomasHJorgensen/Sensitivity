@@ -11,7 +11,8 @@ using EGM
 import time
 import pickle
 import numpy as np
-from numba import njit, jitclass, prange, boolean, int32, double
+from numba import njit, prange, boolean, int32, double
+from numba.experimental import jitclass
 import math
 
 import matplotlib.pyplot as plt
@@ -107,9 +108,6 @@ class SimClass():
 class GP2002(ConsumptionSavingModel):
     
     # ConsumptionSavingModel has the following methods:
-    # .save(self) # save self.par and self.sol
-    # .load(self) # load par and sol
-    # .__str__(self) # for printing
 
     def __init__(self,sol_gp=False,**kwargs): # called when created
 
@@ -152,9 +150,9 @@ class GP2002(ConsumptionSavingModel):
         self.par.p = 0.00302
         self.par.mu = 0.0
         self.par.sigma_trans = 0.0440 #transitory income shock variance
-        self.par.Ntrans = 10
+        self.par.Ntrans = 5
         self.par.sigma_perm = 0.0212 #permanent income shock variance
-        self.par.Nperm = 10
+        self.par.Nperm = 5
 
         # initial distribution
         self.par.mu_a_init = np.exp(-2.794)
@@ -196,7 +194,7 @@ class GP2002(ConsumptionSavingModel):
         polY = np.array([6.8013936, 0.3264338, -0.0148947, 0.000363424, -4.411685e-6, 2.056916e-8]) # constant first
         Ybar = np.exp(polY @ agep ) # matrix multiplication
         self.par.G = Ybar[1:(self.par.Tr+1)]/Ybar[0:(self.par.Tr)] # growth rate is shiftet forward, so g[t+1] is G[t] in code
-        self.par.G[-1] = 1.0/self.par.v[-1]  # self.par.G[-1] = 1.0 
+        self.par.G[-1] = 1.0/self.par.v[-1]  
         
         # Set permanent income to the first predicted value:
         self.par.init_P = Ybar[0]/1000.0 # line 1651
@@ -211,7 +209,6 @@ class GP2002(ConsumptionSavingModel):
         self.setup_grids()
 
         # a. allocate solution
-        #shape = (self.par.Tr+1,self.par.Na)
         T = self.par.Tr
         shape = (T,self.par.Na)
         self.sol.c = np.empty(shape)
@@ -381,78 +378,6 @@ def load_data():
 
     return (consumption/1000.0,income/1000.0,weight)
 
-# SHOULD BE DELETED
-def saving_decomp(par_vec=[],par_list=(),sol_gp=False,do_higher_r=False):
-
-    model = GP2002(sol_gp=sol_gp,do_print=False)
-    model_lc = GP2002(sol_gp=sol_gp,do_print=False)
-    
-    if do_higher_r:
-        model.par.r = model.par.r*1.05
-        model_lc.par.r = model_lc.par.r*1.05
-
-    # update potential parameters
-    num_par = len(par_vec)
-    for p in range(num_par):
-        setattr(model.par,par_list[p],par_vec[p]) # like par.key = val
-        setattr(model_lc.par,par_list[p],par_vec[p]) # like par.key = val
-        print(par_list[p],par_vec[p],end=" ")
-    print("")
-    # solve baseline model
-    model.solve() 
-
-    model.draw_random()
-    model.simulate()
-
-    print(model.par.rho)
-
-    # simulate from alternative model
-    model_lc.par.sigma_perm = 0.0
-    model_lc.par.sigma_trans = 0.0
-    model_lc.par.p = 0.0
-    model_lc.par.credit = -5.0
-    # retirement rule
-    NT = 88-65
-    beta = 1.0/(1.0344) # estimated in GP
-    beta_rho = beta**(1.0/model_lc.par.rho)
-    R_rho = (1+model_lc.par.r)**(1.0/model_lc.par.rho - 1.0)
-    nom = 1.0 - beta_rho*R_rho
-    denom = 1.0 - (beta_rho*R_rho)**NT
-    model_lc.gamma1 = nom/denom
-
-    #print(model_lc.gamma1)
-    # estimates in fig 1
-    # model_lc.par.gamma0 = 0.594
-    # model_lc.par.gamma1 = 0.077
-
-    model_lc.solve() 
-
-    model_lc.draw_random()
-    model_lc.simulate()
-    
-    # saving
-    S    = np.mean(model.sim.S[1:-1,:],axis=1)
-    S_lc = np.mean(model_lc.sim.S[1:-1,:],axis=1)
-    S_b  = S - S_lc
-
-    # wealth
-    W = np.mean(model.sim.a*model.sim.P,axis=1)
-    W_lc = np.mean(model_lc.sim.a*model_lc.sim.P,axis=1)
-    W_b = W - W_lc
-
-    return (S,S_lc,S_b,W,W_lc,W_b)
-
-# SHOULD BE DELETED
-def saving_decomp_wrap(par_vec=[],par_list=(),sol_gp=False,do_higher_r=False):
-    S,S_lc,S_b,W,W_lc,W_b = saving_decomp(par_vec,par_list,sol_gp,do_higher_r=do_higher_r)
-
-    ages = [age for age in range(27,65)]
-    diff = np.empty(len(ages))
-    for a,age in enumerate(ages):
-        diff[a] = S_b[age-27] - S_lc[age-27]
-
-    return diff
-
 def saving_decomposition_wrap(par_vec=[],par_list=(),par_vec_add=[],par_list_add=()):
     par_vec_tot =  np.concatenate( (par_vec , par_vec_add), axis=0)
     par_list_tot = (par_list + par_list_add)
@@ -528,27 +453,3 @@ def num_grad(obj_fun,theta,dim_fun,step=1.0e-5,*args):
         grad[:,p] = (forward - backward)/(2.0*step_now[p])
 
     return grad
-
-
-if __name__ == "__main__":
-
-    lw = 3
-    fs = 17
-        
-    # solve model
-    model = GP2002(do_print=False)
-    model.solve() 
-
-    # simulate data from model
-    model.draw_random()
-    model.simulate()
-
-    # load consumption and income from data and simulate
-    consumption,income,weight = load_data()
-    
-    # plot model implications
-    plot.fig1(model)
-    plot.fig5(model,consumption,income)
-    plot.fig7(model)
-    plot.cali(model)
-       
