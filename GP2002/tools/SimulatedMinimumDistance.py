@@ -14,7 +14,7 @@ class SimulatedMinimumDistance():
     
     '''    
 
-    def __init__(self,model,mom_data,mom_fun,name='baseline',method='nelder-mead',est_par=[],lb=[],ub=[],options={'disp': False},print_iter=False,**kwargs): # called when created
+    def __init__(self,model,mom_data,mom_fun,name='baseline',method='nelder-mead',lb=[],ub=[],options={'disp': False},print_iter=False,**kwargs): # called when created
         
         self.model = model
         self.mom_data = mom_data
@@ -29,18 +29,15 @@ class SimulatedMinimumDistance():
         self.lb = lb
         self.ub = ub
 
-        self.est_par = est_par
-
-
-    def obj_fun(self,theta,W,*args):
+    def obj_fun(self,theta,est_par,W,*args):
         
         if self.print_iter:
             for p in range(len(theta)):
-                print(f' {self.est_par[p]}={theta[p]:2.3f}', end='')
+                print(f' {est_par[p]}={theta[p]:2.3f}', end='')
 
         # 1. update parameters 
-        for i in range(len(self.est_par)):
-            setattr(self.model.par,self.est_par[i],theta[i]) # like par.key = val
+        for i in range(len(est_par)):
+            setattr(self.model.par,est_par[i],theta[i]) # like par.key = val
 
         # 2. solve model with current parameters
         self.model.solve()
@@ -58,79 +55,85 @@ class SimulatedMinimumDistance():
 
         return self.obj 
 
-    def estimate(self,theta0,W,*args):
+    def estimate(self,theta0,est_par,W,*args):
         assert(len(W[0])==len(self.mom_data)) # check dimensions of W and mom_data
 
         # estimate
-        self.est_out = minimize(self.obj_fun, theta0, (W, *args), method=self.method,options=self.options)
+        self.est_out = minimize(self.obj_fun, theta0, (est_par,W, *args), method=self.method,options=self.options)
 
         # return output
         self.est = self.est_out.x
         self.W = W
 
-    def std_error(self,theta,W,Omega,Nobs,Nsim,step=1.0e-4,*args):
-        ''' Calculate standard errors and sensitivity measures '''
+    def std_error(self,theta,est_par,W,Omega,Nobs,Nsim,step=1.0e-4,*args):
+        ''' Calculate standard errors '''
 
         # 1. numerical gradient of moment function wrt theta. 
-        grad = self.num_grad_obj(theta,W,*args)
+        self.grad = self.num_grad_obj(theta,est_par,W,*args)
 
         # 2. asymptotic standard errors [using Omega: V(mom_data_i). If bootstrapped, remember to multiply by Nobs]
-        GW  = np.transpose(grad) @ W
-        GWG = GW @ grad
+        GW  = np.transpose(self.grad) @ W
+        GWG = GW @ self.grad
 
         Avar = np.linalg.inv(GWG) @ ( GW @ Omega @ np.transpose(GW) ) @ np.linalg.inv(GWG)
         fac  = (1.0 + 1.0/Nsim)/Nobs # Nsim: number of simulated observations, Nobs: number of observations in data
         self.std = np.sqrt( fac*np.diag(Avar) )
 
-        # 3. Sensitivity measures
-        self.sens1 = - np.linalg.inv(GWG) @ GW  # Andrews I, Gentzkow M, Shapiro JM: "Measuring the Sensitivity of Parameter Estimates to Estimation Moments." Quarterly Journal of Economics. 2017;132 (4) :1553-1592
-       
-
-    def sensitivity(self,theta,W,fixed_par_str=None,step=1.0e-4,grad=None,do_robust=False,*args):
+    def sensitivity(self,theta,est_par,W,fixed_par_str=None,step=1.0e-4,grad=None,do_robust=False,*args):
         ''' sensitivity measures '''
 
         # 1. numerical gradient of moment function wrt theta. 
         if grad is None:
-            grad = self.num_grad_obj(theta,W,*args)
+            grad = self.num_grad_obj(theta,est_par,W,step=step,*args)
 
         # 2. calculate key components
         GW  = np.transpose(grad) @ W
         GWG = GW @ grad
         Lambda = - np.linalg.inv(GWG) @ GW
 
-        # 3. Sensitivity measures
-        self.sens1 = Lambda  # Andrews I, Gentzkow M, Shapiro JM: "Measuring the Sensitivity of Parameter Estimates to Estimation Moments." Quarterly Journal of Economics. 2017;132 (4) :1553-1592
-
-        # DO sensitivity
+        # 3. do sensitivity
         if fixed_par_str:
 
-            # change the estimation parameters to be the fixed ones
-            est_par = self.est_par
-            self.est_par = fixed_par_str
-
             # construct vector of fixed values
-            gamma = np.empty(len(self.est_par))
-            for p in range(len(self.est_par)):
-                gamma[p] = getattr(self.model.par,self.est_par[p])
+            gamma = np.array([ getattr(self.model.par,name) for name in  fixed_par_str])
 
             # calculate gradient of the moment function with respect to gamma
-            grad_g = self.num_grad_obj(gamma,W,*args)
+            grad_g = self.num_grad_obj(gamma,fixed_par_str,W,step=step,*args)
 
-            self.est_par = est_par
-            self.sens2 = Lambda @ grad_g
+            self.sens = Lambda @ grad_g
 
             elasticity = np.empty((len(theta),len(gamma)))
             for t in range(len(theta)):
                 for g in range(len(gamma)):
-                    elasticity[t,g] = self.sens2[t,g]*gamma[g]/theta[t]    
+                    elasticity[t,g] = self.sens[t,g]*gamma[g]/theta[t]    
             
-            self.sens2e = elasticity
+            self.sens_ela = elasticity
 
-            # if do_robust:
-            #     # calcualate robust sensitivity measure
+            if do_robust: # calcualate robust sensitivity measure
+                
+                # a. second order derivative of the moment function wrt to theta
+                grad2 = self.num_grad_grad(theta,est_par,theta,est_par,W,step=step,*args)
+
+                # b. cross derivative of the moment function wrt to theta then gamma
+                grad_cross = self.num_grad_grad(gamma,fixed_par_str,theta,est_par,W,step=step,*args)
+
+                # c. kroniker product of weighted objective function
+                self.obj_fun(theta,est_par,W,*args)
+                gWkron = np.kron(np.transpose(self.diff) @ W , np.eye(len(theta)) ) 
+
+                nom = gWkron @ grad_cross + (GW @ grad_g)
+                denom = gWkron @ grad2 + GWG
+                self.sens_robust = - np.linalg.inv(denom) @ nom
+
+                elasticity = np.empty((len(theta),len(gamma)))
+                for t in range(len(theta)):
+                    for g in range(len(gamma)):
+                        elasticity[t,g] = self.sens_robust[t,g]*gamma[g]/theta[t]    
+
+                self.sens_ela_robust = elasticity
 
 
-    def num_grad_obj(self,params,W,step=1.0e-4,*args):
+    def num_grad_obj(self,params,names,W,step=1.0e-4,*args):
         """ 
         Returns the numerical gradient of the moment vector
         Inputs:
@@ -153,20 +156,84 @@ class SimulatedMinimumDistance():
             step_now  = np.zeros(num_par)
             step_now[p] = np.fmax(step,np.abs(step*params_now[p]))
 
-            self.obj_fun(params_now + step_now,W,*args)
-            mom_forward = self.diff
+            self.obj_fun(params_now + step_now,names,W,*args)
+            mom_forward = self.diff.copy()
 
-            self.obj_fun(params_now - step_now,W,*args)
-            mom_backward = self.diff
+            self.obj_fun(params_now - step_now,names,W,*args)
+            mom_backward = self.diff.copy()
 
             grad[:,p] = (mom_forward - mom_backward)/(2.0*step_now[p])
 
         # b. reset the parameters in the model to params
-        for i in range(len(self.est_par)):
-            setattr(self.model.par,self.est_par[i],params[i]) 
+        for i in range(len(names)):
+            setattr(self.model.par,names[i],params[i]) 
         
         # c. return gradient
         return grad
+
+    def num_grad_grad(self,params,names,theta,est_par,W,step=1.0e-4,*args):
+        """ 
+        Returns the numerical gradient of the gradient wrt to theta
+        
+        Input: 
+            params (1d array): vector of L parameter values with respect to which the second order gradient is to be calculated
+            names (list): list with L parameter names with respect to which the second order gradient is to be calculated
+            theta (1d array): vector of K parameter values with respect to which the first order gradient is to be calculated
+            est_par (list): list with K parameter names with respect to which the first order gradient is to be calculated
+            W (2d array): J x J weighting matrix
+            step (float): step size in finite difference
+            *args: additional objective function arguments
+
+        Output:
+            grad2 (2d array): J*K x L second order gradient of the moment function wrt to the elements in params
+        
+        """
+
+        num_par = len(params)
+        num_theta = len(theta)
+        num_mom = len(W[0])
+        grad2 = np.empty((num_mom*num_theta,num_par))
+
+        for p in range(num_par):
+            
+            # set new parameters [only relevant when doing this for gamma]
+            params_now = params.copy()
+            step_now  = np.zeros(num_par)
+            step_now[p] = np.fmax(step,np.abs(step*params_now[p]))
+            
+            # determine evaluation values for theta and set parameters
+            params_plus = params_now + step_now
+            if names == est_par:
+                theta_eval = params_plus
+
+            else:
+                theta_eval = theta
+                for i,par in enumerate(names):
+                    setattr(self.model.par,par,params_plus[i]) 
+
+            grad_plus = self.num_grad_obj(theta_eval,est_par,W,*args) # evaluate at theta because that will then be the basis for the gradient in that dimension
+            
+            # determine evaluation values for theta and set parameters
+            params_minus = params_now - step_now
+
+            if names == est_par:
+                theta_eval = params_minus
+
+            else:
+                theta_eval = theta
+                for i,par in enumerate(names):
+                    setattr(self.model.par,par,params_minus[i]) 
+            
+            grad_minus = self.num_grad_obj(theta_eval,est_par,W,*args) # evaluate at theta because that will then be the basis for the gradient in that dimension
+
+            grad_gradp = (grad_plus - grad_minus)/(2.0*step_now[p])
+            grad2[:,p] = grad_gradp.ravel() # this is the same as vec(G.T) because Python is row-major
+
+        # b. reset the parameters in the model to params
+        for i,par in enumerate(names):
+            setattr(self.model.par,par,params[i])
+
+        return grad2 
 
 
 

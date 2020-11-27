@@ -11,7 +11,7 @@ using EGM
 import time
 import pickle
 import numpy as np
-from numba import njit, prange, boolean, int32, double
+from numba import njit, prange, boolean, int64, double
 from numba.experimental import jitclass
 import math
 
@@ -32,9 +32,9 @@ import tools.plot as plot
 
 # a. parameter class (numba)
 parlist = [
-    ('Tr',int32),
-    ('age_min',int32),
-    ('age_max',int32), 
+    ('Tr',int64),
+    ('age_min',int64),
+    ('age_max',int64), 
     ('beta',double), 
     ('rho',double),
     ('gamma0',double),
@@ -45,23 +45,23 @@ parlist = [
     ('R',double),
     ('credit',double),
     ('sigma_trans',double), 
-    ('Ntrans',int32),
+    ('Ntrans',int64),
     ('sigma_perm',double), 
-    ('Nperm',int32),
+    ('Nperm',int64),
     ('p',double), 
     ('mu',double), 
-    ('Na',int32),
+    ('Na',int64),
     ('grid_a',double[:]), 
     ('grid_m',double[:]),  
     ('grid_age',double[:]),        
     ('a_max',double),    
-    ('Nshocks',int32),        
+    ('Nshocks',int64),        
     ('trans',double[:]),
     ('trans_w',double[:]),     
     ('perm',double[:]),
     ('perm_w',double[:]),     
     ('do_print',boolean), # boolean
-    ('simN',int32),
+    ('simN',int64),
     ('mu_a_init',double),
     ('sigma_a_init',double),
     ('init_P',double),
@@ -227,7 +227,6 @@ class GP2002(ConsumptionSavingModel):
             else:
                 solve_egm(t,self.sol,self.par) 
                 
-
             # iii. print
             toc = time.time()
             if self.par.do_print:
@@ -384,7 +383,7 @@ def saving_decomposition_wrap(par_vec=[],par_list=(),par_vec_add=[],par_list_add
     (S,S_lc,S_b,W,W_lc,W_b,diff) = saving_decomposition(par_vec_tot,par_list_tot)
     return diff
 
-def saving_decomposition(par_vec=[],par_list=[]):
+def saving_decomposition(par_vec=[],par_list=[],do_print=False):
 
     model = GP2002()
     model_lc = GP2002()
@@ -394,8 +393,8 @@ def saving_decomposition(par_vec=[],par_list=[]):
     for p in range(num_par):
         setattr(model.par,par_list[p],par_vec[p]) 
         setattr(model_lc.par,par_list[p],par_vec[p]) 
-        print(f'{par_list[p]} = {par_vec[p]:2.5f}',end=" ")
-    print("")
+        if do_print: print(f'{par_list[p]} = {par_vec[p]:2.5f}',end=" ")
+    if do_print: print("")
 
     # solve baseline model
     model.solve() 
