@@ -392,9 +392,9 @@ def saving_decomposition(par_vec=[],par_list=[]):
     # update potential parameters
     num_par = len(par_vec)
     for p in range(num_par):
-        setattr(model.par,par_list[p],par_vec[p]) # like par.key = val
-        setattr(model_lc.par,par_list[p],par_vec[p]) # like par.key = val
-        print(par_list[p],par_vec[p],end=" ")
+        setattr(model.par,par_list[p],par_vec[p]) 
+        setattr(model_lc.par,par_list[p],par_vec[p]) 
+        print(f'{par_list[p]} = {par_vec[p]:2.5f}',end=" ")
     print("")
 
     # solve baseline model

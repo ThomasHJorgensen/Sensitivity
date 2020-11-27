@@ -50,8 +50,8 @@ class SimulatedMinimumDistance():
         self.mom_sim = self.mom_fun(self.model.sim,*args)
 
         # 4. calculate objective function and return it
-        diff = self.mom_data - self.mom_sim
-        self.obj  = (np.transpose(diff) @ W) @ diff
+        self.diff = self.mom_data - self.mom_sim
+        self.obj  = (np.transpose(self.diff) @ W) @ self.diff
 
         if self.print_iter:
             print(f' -> {self.obj:2.4f}')
@@ -71,28 +71,8 @@ class SimulatedMinimumDistance():
     def std_error(self,theta,W,Omega,Nobs,Nsim,step=1.0e-4,*args):
         ''' Calculate standard errors and sensitivity measures '''
 
-        num_par = len(theta)
-        num_mom = len(W[0])
-
-        # 1. numerical gradient. The objective function is (data - sim)'*W*(data - sim) so take the negative of mom_sim
-        grad = np.empty((num_mom,num_par))
-        for p in range(num_par):
-            theta_now = theta[:] 
-
-            step_now  = np.zeros(num_par)
-            step_now[p] = np.fmax(step,step*theta_now[p])
-
-            self.obj_fun(theta_now + step_now,W,*args)
-            mom_forward = - self.mom_sim
-
-            self.obj_fun(theta_now - step_now,W,*args)
-            mom_backward = - self.mom_sim
-
-            grad[:,p] = (mom_forward - mom_backward)/(2.0*step_now[p])
-
-        # 1.1 reset the parameters in the model to theta
-        for i in range(len(self.est_par)):
-            setattr(self.model.par,self.est_par[i],theta[i]) 
+        # 1. numerical gradient of moment function wrt theta. 
+        grad = self.num_grad_obj(theta,W,*args)
 
         # 2. asymptotic standard errors [using Omega: V(mom_data_i). If bootstrapped, remember to multiply by Nobs]
         GW  = np.transpose(grad) @ W
@@ -106,33 +86,14 @@ class SimulatedMinimumDistance():
         self.sens1 = - np.linalg.inv(GWG) @ GW  # Andrews I, Gentzkow M, Shapiro JM: "Measuring the Sensitivity of Parameter Estimates to Estimation Moments." Quarterly Journal of Economics. 2017;132 (4) :1553-1592
        
 
-    def sensitivity(self,theta,W,fixed_par_str=None,step=1.0e-4,*args):
+    def sensitivity(self,theta,W,fixed_par_str=None,step=1.0e-4,grad=None,do_robust=False,*args):
         ''' sensitivity measures '''
 
-        num_par = len(theta)
-        num_mom = len(W[0])
+        # 1. numerical gradient of moment function wrt theta. 
+        if grad is None:
+            grad = self.num_grad_obj(theta,W,*args)
 
-        # 1. numerical gradient. The objective function is (data - sim)'*W*(data - sim) so take the negative of mom_sim
-        grad = np.empty((num_mom,num_par))
-        for p in range(num_par):
-            theta_now = theta[:] 
-
-            step_now    = np.zeros(num_par)
-            step_now[p] = np.fmax(step,step*theta_now[p])
-
-            self.obj_fun(theta_now + step_now,W,*args)
-            mom_forward = - self.mom_sim
-
-            self.obj_fun(theta_now - step_now,W,*args)
-            mom_backward = - self.mom_sim
-
-            grad[:,p] = (mom_forward - mom_backward)/(2.0*step_now[p])
-
-        # 1.1 reset the parameters in the model to theta
-        for i in range(len(self.est_par)):
-           setattr(self.model.par,self.est_par[i],theta[i]) 
-
-        # 2. Sensitivity measures
+        # 2. calculate key components
         GW  = np.transpose(grad) @ W
         GWG = GW @ grad
         Lambda = - np.linalg.inv(GWG) @ GW
@@ -152,38 +113,60 @@ class SimulatedMinimumDistance():
             for p in range(len(self.est_par)):
                 gamma[p] = getattr(self.model.par,self.est_par[p])
 
-            # calculate gradient with respect to gamma
-            num_gamma = len(gamma)
-            grad_g = np.empty((num_mom,num_gamma))
-            for p in range(num_gamma):
-                gamma_now = gamma[:] 
-
-                step_now    = np.zeros(num_gamma)
-                step_now[p] = np.fmax(step,step*gamma_now[p])
-
-                self.obj_fun(gamma_now + step_now,W,*args)
-                mom_forward = - self.mom_sim
-
-                self.obj_fun(gamma_now - step_now,W,*args)
-                mom_backward = - self.mom_sim
-
-                grad_g[:,p] = (mom_forward - mom_backward)/(2.0*step_now[p])
-
-            # 1.1 reset the parameters in the model to theta
-            for i in range(len(self.est_par)):
-                setattr(self.model.par,self.est_par[i],gamma[i]) 
+            # calculate gradient of the moment function with respect to gamma
+            grad_g = self.num_grad_obj(gamma,W,*args)
 
             self.est_par = est_par
             self.sens2 = Lambda @ grad_g
 
-            ela = np.empty((len(theta),len(gamma)))
+            elasticity = np.empty((len(theta),len(gamma)))
             for t in range(len(theta)):
                 for g in range(len(gamma)):
-                    ela[t,g] = self.sens2[t,g]*gamma[g]/theta[t]    
+                    elasticity[t,g] = self.sens2[t,g]*gamma[g]/theta[t]    
             
-            self.sens2e = ela
+            self.sens2e = elasticity
+
+            # if do_robust:
+            #     # calcualate robust sensitivity measure
 
 
+    def num_grad_obj(self,params,W,step=1.0e-4,*args):
+        """ 
+        Returns the numerical gradient of the moment vector
+        Inputs:
+            params (1d array): K-element vector of parameters
+            W (2d array): J x J weighting matrix
+            step (float): step size in finite difference
+            *args: additional objective function arguments
+        
+        Output:
+            grad (2d array): J x K gradient of the moment function wrt to the elements in params
+        """
+        num_par = len(params)
+        num_mom = len(W[0])
+
+        # a. numerical gradient. The objective function is (data - sim)'*W*(data - sim) so take the negative of mom_sim
+        grad = np.empty((num_mom,num_par))
+        for p in range(num_par):
+            params_now = params.copy()
+
+            step_now  = np.zeros(num_par)
+            step_now[p] = np.fmax(step,np.abs(step*params_now[p]))
+
+            self.obj_fun(params_now + step_now,W,*args)
+            mom_forward = self.diff
+
+            self.obj_fun(params_now - step_now,W,*args)
+            mom_backward = self.diff
+
+            grad[:,p] = (mom_forward - mom_backward)/(2.0*step_now[p])
+
+        # b. reset the parameters in the model to params
+        for i in range(len(self.est_par)):
+            setattr(self.model.par,self.est_par[i],params[i]) 
+        
+        # c. return gradient
+        return grad
 
 
 
