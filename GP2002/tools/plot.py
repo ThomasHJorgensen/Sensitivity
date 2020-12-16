@@ -291,37 +291,38 @@ def plot_figure(x,y,path_name,xlabel='',ylabel='',legend='', fs=17,lw=3):
     plt.show()
 
 # SENSITIVITY
-def sens_fig_tab(sens,sense,theta,est_par_tex,fixed_par_tex,sol_gp=False,add_str=''):
+def sens_fig_tab(sens,sense,theta,est_par_tex,fixed_par_tex,sol_gp=False,add_str='',save=True):
     sol_gp_str = ''
     if sol_gp:
         sol_gp_str = '_gp'
 
-    num_theta = len(theta)
-    num_gamma = len(fixed_par_tex)
-    name = 'gp2002' + sol_gp_str + add_str 
-    with open('output/' + name + '.tex',"w") as file:
-        file.write("\\begin{tabular}{l*{%d}{c}} \n" %num_theta)
-        file.write("\\multicolumn{%d}{c}{} \\\\ \\toprule \n" %(1+num_theta))
-        for p in range(num_theta):
-            file.write("& %s " %est_par_tex[p])
-        file.write("\\\\ \\cmidrule(lr){2-%d} \n " %(num_theta+1))
-
-        # sensitivity
-        for g in range(num_gamma):
-            file.write(" %s " %fixed_par_tex[g])
+    if save:
+        num_theta = len(theta)
+        num_gamma = len(fixed_par_tex)
+        name = 'gp2002' + sol_gp_str + add_str 
+        with open('output/' + name + '.tex',"w") as file:
+            file.write("\\begin{tabular}{l*{%d}{c}} \n" %num_theta)
+            file.write("\\multicolumn{%d}{c}{} \\\\ \\toprule \n" %(1+num_theta))
             for p in range(num_theta):
-                file.write("& %2.3f " %sens[p,g])
-            file.write("\\\\ \n ")
+                file.write("& %s " %est_par_tex[p])
+            file.write("\\\\ \\cmidrule(lr){2-%d} \n " %(num_theta+1))
 
-        # estimates
-        file.write("\\midrule Estimates")
-        for p in range(num_theta):
-            file.write("& %2.3f " %theta[p])
+            # sensitivity
+            for g in range(num_gamma):
+                file.write(" %s " %fixed_par_tex[g])
+                for p in range(num_theta):
+                    file.write("& %2.3f " %sens[p,g])
+                file.write("\\\\ \n ")
 
-        file.write("\\\\ \\bottomrule \n \\end{tabular}" )
+            # estimates
+            file.write("\\midrule Estimates")
+            for p in range(num_theta):
+                file.write("& %2.3f " %theta[p])
+
+            file.write("\\\\ \\bottomrule \n \\end{tabular}" )
 
     # heatmap plot of elasticities
-    fs = 17
+    fs = 15
     sns.set(rc={'text.usetex' : True})
     cmap = sns.diverging_palette(10, 220, sep=10, n=100)
 
@@ -330,4 +331,4 @@ def sens_fig_tab(sens,sense,theta,est_par_tex,fixed_par_tex,sol_gp=False,add_str
     ax = sns.heatmap(sense,annot=True,fmt="2.2f",annot_kws={"size": fs},xticklabels=fixed_par_tex,yticklabels=est_par_tex,center=0,linewidth=.5,cmap=cmap)
     plt.yticks(rotation=0) 
     ax.tick_params(axis='both', which='major', labelsize=20)
-    plt.savefig('output/sense_' + name + '.pdf',bbox_inches="tight")
+    if save: plt.savefig('output/sense_' + name + '.pdf',bbox_inches="tight")

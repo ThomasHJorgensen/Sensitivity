@@ -69,7 +69,7 @@ class SimulatedMinimumDistance():
         ''' Calculate standard errors '''
 
         # 1. numerical gradient of moment function wrt theta. 
-        self.grad = self.num_grad_obj(theta,est_par,W,*args)
+        self.grad = self.num_grad_moms(theta,est_par,W,*args)
 
         # 2. asymptotic standard errors [using Omega: V(mom_data_i). If bootstrapped, remember to multiply by Nobs]
         GW  = np.transpose(self.grad) @ W
@@ -79,17 +79,18 @@ class SimulatedMinimumDistance():
         fac  = (1.0 + 1.0/Nsim)/Nobs # Nsim: number of simulated observations, Nobs: number of observations in data
         self.std = np.sqrt( fac*np.diag(Avar) )
 
-    def sensitivity(self,theta,est_par,W,fixed_par_str=None,step=1.0e-4,grad=None,do_robust=False,*args):
+    def sensitivity(self,theta,est_par,W,fixed_par_str=None,step=1.0e-7,grad=None,do_robust=False,*args):
         ''' sensitivity measures '''
 
         # 1. numerical gradient of moment function wrt theta. 
         if grad is None:
-            grad = self.num_grad_obj(theta,est_par,W,step=step,*args)
+            grad = self.num_grad_moms(theta,est_par,W,step=step,*args)
+        self.grad = grad
 
         # 2. calculate key components
         GW  = np.transpose(grad) @ W
         GWG = GW @ grad
-        Lambda = - np.linalg.inv(GWG) @ GW
+        Lambda = - np.linalg.solve(GWG , GW)
 
         # 3. do sensitivity
         if fixed_par_str:
@@ -98,7 +99,7 @@ class SimulatedMinimumDistance():
             gamma = np.array([ getattr(self.model.par,name) for name in  fixed_par_str])
 
             # calculate gradient of the moment function with respect to gamma
-            grad_g = self.num_grad_obj(gamma,fixed_par_str,W,step=step,*args)
+            grad_g = self.num_grad_moms(gamma,fixed_par_str,W,step=step,*args)
 
             self.sens = Lambda @ grad_g
 
@@ -123,7 +124,7 @@ class SimulatedMinimumDistance():
 
                 nom = gWkron @ grad_cross + (GW @ grad_g)
                 denom = gWkron @ grad2 + GWG
-                self.sens_robust = - np.linalg.inv(denom) @ nom
+                self.sens_robust = - np.linalg.solve(denom , nom)
 
                 elasticity = np.empty((len(theta),len(gamma)))
                 for t in range(len(theta)):
@@ -133,7 +134,7 @@ class SimulatedMinimumDistance():
                 self.sens_ela_robust = elasticity
 
 
-    def num_grad_obj(self,params,names,W,step=1.0e-4,*args):
+    def num_grad_moms(self,params,names,W,step=1.0e-4,*args):
         """ 
         Returns the numerical gradient of the moment vector
         Inputs:
@@ -164,6 +165,51 @@ class SimulatedMinimumDistance():
 
             grad[:,p] = (mom_forward - mom_backward)/(2.0*step_now[p])
 
+        # b. reset the parameters in the model to params
+        for i in range(len(names)):
+            setattr(self.model.par,names[i],params[i]) 
+        
+        # c. return gradient
+        return grad
+    
+    def num_grad_obj(self,obj_fun,params,names,step=1.0e-4,*args):
+        """ 
+        Returns the numerical gradient of the moment vector
+        Inputs:
+            obj_fun (callable): function that returns K-element vector
+            params (1d array): L-element vector of parameters
+            W (2d array): J x J weighting matrix
+            step (float): step size in finite difference
+            *args: additional objective function arguments
+        
+        Output:
+            grad (2d array): K x L gradient of the moment function wrt to the elements in params
+        """
+        num_par = len(params)
+        
+        # determine number of elements in vector output via first forward
+        params_now = params.copy()
+
+        step_now  = np.zeros(num_par)
+        step_now[0] = np.fmax(step,np.abs(step*params_now[0]))
+
+        forward  = obj_fun(params_now + step_now,names,*args)
+        num_vec = forward.size
+
+        # a. numerical gradient. The objective function is (data - sim)'*W*(data - sim) so take the negative of mom_sim
+        grad = np.empty((num_vec,num_par))
+        for p in range(num_par):
+            params_now = params.copy()
+
+            step_now  = np.zeros(num_par)
+            step_now[p] = np.fmax(step,np.abs(step*params_now[p]))
+
+            if (p>0): forward  = obj_fun(params_now + step_now,names,*args)
+
+            backward = obj_fun(params_now - step_now,names,*args)
+
+            grad[:,p] = (forward - backward)/(2.0*step_now[p])
+        
         # b. reset the parameters in the model to params
         for i in range(len(names)):
             setattr(self.model.par,names[i],params[i]) 
@@ -211,7 +257,7 @@ class SimulatedMinimumDistance():
                 for i,par in enumerate(names):
                     setattr(self.model.par,par,params_plus[i]) 
 
-            grad_plus = self.num_grad_obj(theta_eval,est_par,W,*args) # evaluate at theta because that will then be the basis for the gradient in that dimension
+            grad_plus = self.num_grad_moms(theta_eval,est_par,W,*args) # evaluate at theta because that will then be the basis for the gradient in that dimension
             
             # determine evaluation values for theta and set parameters
             params_minus = params_now - step_now
@@ -224,7 +270,7 @@ class SimulatedMinimumDistance():
                 for i,par in enumerate(names):
                     setattr(self.model.par,par,params_minus[i]) 
             
-            grad_minus = self.num_grad_obj(theta_eval,est_par,W,*args) # evaluate at theta because that will then be the basis for the gradient in that dimension
+            grad_minus = self.num_grad_moms(theta_eval,est_par,W,*args) # evaluate at theta because that will then be the basis for the gradient in that dimension
 
             grad_gradp = (grad_plus - grad_minus)/(2.0*step_now[p])
             grad2[:,p] = grad_gradp.ravel() # this is the same as vec(G.T) because Python is row-major
